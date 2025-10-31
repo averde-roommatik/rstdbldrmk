@@ -1,4 +1,4 @@
-name: Build Custom Windows Client (Optimized)
+name: Build Custom Windows Client (Modular)
 
 on:
   workflow_dispatch:
@@ -7,7 +7,6 @@ env:
   RUSTDESK_VERSION: ${{ vars.RUSTDESK_VERSION || '1.4.3' }}
   FLUTTER_VERSION: "3.24.5"
   RUST_VERSION: "1.75"
-  VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
   
   FILENAME: ${{ vars.FILENAME || 'rustdesk' }}
   APP_NAME: ${{ vars.APP_NAME || 'RustDesk' }}
@@ -26,38 +25,97 @@ env:
   PERMANENT_PASSWORD: ${{ secrets.PERMANENT_PASSWORD }}
 
 jobs:
-  build-windows:
-    name: Build Windows x64 Client
+  build-prerequisites:
+    name: 1. Build Prerequisites
     runs-on: windows-2022
     
     steps:
-      - name: Checkout Self Repo (for assets)
+      - name: Checkout All Sources
         uses: actions/checkout@v4
-        with:
-          path: self
+        with: { path: "self" }
+      - uses: actions/checkout@v4
+        with: { repository: "rustdesk/rustdesk", ref: "${{ env.RUSTDESK_VERSION }}", path: "rustdesk", submodules: "recursive" }
+      - uses: actions/checkout@v4
+        with: { repository: "rustdesk-org/RustDeskTempTopMostWindow", path: "RustDeskTempTopMostWindow" }
 
-      - name: Checkout RustDesk Source Code
+      - name: Install Tools
+        uses: dtolnay/rust-toolchain@v1
+        with: { toolchain: "${{ env.RUST_VERSION }}", targets: "x86_64-pc-windows-msvc", components: "rustfmt" }
+      - run: choco install -y python311 llvm vcredist140 nsis imagemagick.app visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64" --no-progress
+      - uses: subosito/flutter-action@v2
+        with: { channel: "stable", flutter-version: "${{ env.FLUTTER_VERSION }}", cache: true }
+      - run: cargo install flutter_rust_bridge_codegen --version 1.80.1 --features "uuid" --locked
+
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: C:/vcpkg_installed
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('rustdesk/vcpkg.json') }}
+      
+      - name: Build C++ Dependencies
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgJsonGlob: "rustdesk/vcpkg.json"
+          vcpkgTriplet: "x64-windows-static"
+          vcpkgDirectory: "C:/vcpkg_installed/vcpkg"
+      - uses: microsoft/setup-msbuild@v2
+      - run: |
+          cd RustDeskTempTopMostWindow
+          git checkout 53b548a5398624f7149a382000397993542ad796
+          msbuild WindowInjection/WindowInjection.vcxproj -p:Configuration=Release -p:Platform=x64 -p:PlatformToolset=v143 /p:TargetVersion=Windows10
+        shell: powershell
+
+      - name: Generate Bridge Files
+        working-directory: rustdesk
+        run: |
+          cd flutter && flutter pub get && cd ..
+          flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart --c-output ./flutter/macos/Runner/bridge_generated.h
+
+      - name: Stage Artifacts for Upload
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Path "dist"
+          Copy-Item "RustDeskTempTopMostWindow/WindowInjection/x64/Release/WindowInjection.dll" "dist/"
+          Copy-Item "rustdesk/src/bridge_generated.rs" "dist/"
+          Copy-Item "rustdesk/flutter/lib/generated_bridge.dart" "dist/"
+      
+      - name: Upload Prerequisites Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prerequisites-build
+          path: dist/
+
+  build-and-package-client:
+    name: 2. Apply Config and Package
+    needs: build-prerequisites
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout All Sources
         uses: actions/checkout@v4
-        with:
-          repository: rustdesk/rustdesk
-          ref: ${{ env.RUSTDESK_VERSION }}
-          path: rustdesk
-          submodules: recursive
-          
-      - name: Checkout RustDeskTempTopMostWindow Source Code
-        uses: actions/checkout@v4
-        with:
-          repository: rustdesk-org/RustDeskTempTopMostWindow
-          path: RustDeskTempTopMostWindow
+        with: { path: "self" }
+      - uses: actions/checkout@v4
+        with: { repository: "rustdesk/rustdesk", ref: "${{ env.RUSTDESK_VERSION }}", path: "rustdesk", submodules: "recursive" }
 
-      - name: Install Build Tools
-        run: choco install -y git python311 llvm vcredist140 nsis imagemagick.app visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64" --no-progress
+      - name: Install Tools
+        run: choco install -y python311 imagemagick.app visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64" nsis --no-progress
+      - uses: subosito/flutter-action@v2
+        with: { channel: "stable", flutter-version: "${{ env.FLUTTER_VERSION }}", cache: true }
+      - uses: dtolnay/rust-toolchain@v1
+        with: { toolchain: "${{ env.RUST_VERSION }}", targets: "x86_64-pc-windows-msvc" }
 
-      - name: Install Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: "stable"
-          flutter-version: ${{ env.FLUTTER_VERSION }}
+      - name: Download and Restore Prerequisites
+        uses: actions/download-artifact@v4
+        with: { name: "prerequisites-build", path: "rustdesk" }
+      - run: |
+          Copy-Item "rustdesk/bridge_generated.rs" "rustdesk/src/"
+          Copy-Item "rustdesk/generated_bridge.dart" "rustdesk/flutter/lib/"
+        shell: powershell
+
+      - name: Cache vcpkg & Cargo
+        uses: actions/cache@v4
+        with: { path: "C:/vcpkg_installed", key: "vcpkg-${{ runner.os }}-${{ hashFiles('rustdesk/vcpkg.json') }}" }
+      - uses: Swatinem/rust-cache@v2
 
       - name: Patch Flutter SDK
         shell: bash
@@ -67,56 +125,23 @@ jobs:
           cp "$PATCH_FILE" "$FLUTTER_SDK_DIR/"
           cd "$FLUTTER_SDK_DIR"
           git apply "flutter_3.24.4_dropdown_menu_enableFilter.diff"
-        
-      - name: Install Rust and Bridge Codegen
-        uses: dtolnay/rust-toolchain@v1
-        with: { toolchain: "${{ env.RUST_VERSION }}", targets: "x86_64-pc-windows-msvc", components: "rustfmt" }
-      - run: cargo install flutter_rust_bridge_codegen --version 1.80.1 --features "uuid" --locked
-        shell: bash
 
-      - name: Setup vcpkg & Install dependencies
-        uses: lukka/run-vcpkg@v11
-        with: { vcpkgGitCommitId: "${{ env.VCPKG_COMMIT_ID }}" }
-      - run: vcpkg install ffmpeg:x64-windows-static
-        env: { VCPKG_DEFAULT_TRIPLET: "x64-windows-static" }
-
-      - name: Build WindowInjection.dll
-        uses: microsoft/setup-msbuild@v2
-      - run: |
-          cd RustDeskTempTopMostWindow
-          git checkout 53b548a5398624f7149a382000397993542ad796
-          msbuild WindowInjection/WindowInjection.vcxproj -p:Configuration=Release -p:Platform=x64 -p:PlatformToolset=v143 /p:TargetVersion=Windows10
-        shell: powershell
-        
-      - name: Generate Bridge Files
+      - name: Prepare & Apply Custom Config
         working-directory: rustdesk
-        run: |
-          cd flutter
-          flutter pub get
-          cd ..
-          flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart --c-output ./flutter/macos/Runner/bridge_generated.h
-
-      - name: Prepare Images from Repo Assets
-        working-directory: rustdesk/res
         shell: powershell
         run: |
           if (Test-Path "${{ github.workspace }}/self/assets/icon.png") {
-            Copy-Item "${{ github.workspace }}/self/assets/icon.png" -Destination "icon.png"
-            magick icon.png -define icon:auto-resize=256,64,48,32,16 icon.ico
-            Copy-Item "icon.ico" "tray-icon.ico"
+            Copy-Item "${{ github.workspace }}/self/assets/icon.png" -Destination "res/icon.png"
+            magick res/icon.png -define icon:auto-resize=256,64,48,32,16 res/icon.ico
+            Copy-Item "res/icon.ico" "res/tray-icon.ico"
           }
           if (Test-Path "${{ github.workspace }}/self/assets/logo.png") {
-            Copy-Item "${{ github.workspace }}/self/assets/logo.png" -Destination "logo.png"
+            Copy-Item "${{ github.workspace }}/self/assets/logo.png" -Destination "res/logo.png"
           }
           
-      - name: Apply Text & Code Modifications
-        working-directory: rustdesk
-        shell: powershell
-        run: |
           (Get-Content libs/hbb_common/src/config.rs).Replace('rs-ny.rustdesk.com', '${{ env.SERVER_IP }}') | Set-Content libs/hbb_common/src/config.rs
           (Get-Content libs/hbb_common/src/config.rs).Replace('OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=', '${{ env.PUBLIC_KEY }}') | Set-Content libs/hbb_common/src/config.rs
           (Get-Content src/common.rs).Replace('https://admin.rustdesk.com', '${{ env.API_SERVER }}') | Set-Content src/common.rs
-          
           (Get-Content Cargo.toml).Replace('ProductName = "RustDesk"', 'ProductName = "${{ env.APP_NAME }}"') | Set-Content Cargo.toml
           (Get-Content Cargo.toml).Replace('FileDescription = "RustDesk Remote Desktop"', 'FileDescription = "${{ env.APP_NAME }}"') | Set-Content Cargo.toml
           (Get-Content Cargo.toml).Replace('Purslane Ltd', '${{ env.COMPANY_NAME }}') | Set-Content Cargo.toml
@@ -128,12 +153,7 @@ jobs:
           if ('${{ env.DELAY_FIX }}' -eq 'true') { (Get-Content src/client.rs).Replace('!key.is_empty()', 'false') | Set-Content src/client.rs }
           if ('${{ env.RUN_AS_ADMIN }}' -eq 'true') { (Get-Content flutter/windows/runner/runner.exe.manifest) -replace '</compatibility>', "<security><requestedExecutionLevel level=`"requireAdministrator`" uiAccess=`"false`"/></security></compatibility>" | Set-Content flutter/windows/runner/runner.exe.manifest }
 
-          $customConfig = @{
-              "conn-type" = "${{ env.DIRECTION }}"; "password" = "${{ env.PERMANENT_PASSWORD }}";
-              "enable-lan-discovery" = $(if ("${{ env.DENY_LAN }}" -eq "true") { "N" } else { "Y" });
-              "allow-hide-cm" = $(if ("${{ env.HIDE_CM }}" -eq "true") { "Y" } else { "N" });
-              "default-settings" = @{"access-mode" = "full"};
-          }
+          $customConfig = @{ "conn-type" = "${{ env.DIRECTION }}"; "password" = "${{ env.PERMANENT_PASSWORD }}"; "enable-lan-discovery" = $(if ("${{ env.DENY_LAN }}" -eq "true") { "N" } else { "Y" }); "allow-hide-cm" = $(if ("${{ env.HIDE_CM }}" -eq "true") { "Y" } else { "N" }); "default-settings" = @{"access-mode" = "full"}; }
           $jsonCustom = $customConfig | ConvertTo-Json -Compress
           $base64Custom = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($jsonCustom))
           Set-Content -Path "custom.txt" -Value $base64Custom
@@ -143,25 +163,19 @@ jobs:
         working-directory: rustdesk/flutter
         run: flutter pub run flutter_launcher_icons
 
-      - name: Build RustDesk Binaries
-        working-directory: rustdesk
-        run: python3 .\build.py --flutter --portable --skip-portable-pack
-        
-      - name: Package .exe and .msi
+      - name: Build & Package
         working-directory: rustdesk
         shell: powershell
         run: |
+          python3 .\build.py --flutter --portable --skip-portable-pack
           $buildDir = "flutter/build/windows/x64/runner/Release"
-          
-          Copy-Item "${{ github.workspace }}/RustDeskTempTopMostWindow/WindowInjection/x64/Release/WindowInjection.dll" $buildDir
+          Copy-Item "${{ github.workspace }}/WindowInjection.dll" $buildDir
           Copy-Item "custom.txt" $buildDir
           if (Test-Path "res/logo.png") { Copy-Item "res/logo.png" "$buildDir/data/flutter_assets/assets/" }
-          
           Set-Location libs/portable
           python3 generate.py -f "../../$buildDir" -o . -e "../../$buildDir/rustdesk.exe"
           Move-Item "../../target/release/rustdesk-portable-packer.exe" "../../${{ env.FILENAME }}.exe"
           Set-Location ../../
-
           $msiAppName = "${{ env.APP_NAME }}".Replace(' ','_')
           Copy-Item "$buildDir/rustdesk.exe" "$buildDir/$msiAppName.exe"
           Set-Location res/msi
@@ -170,7 +184,7 @@ jobs:
           & "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\amd64\msbuild.exe" msi.sln -p:Configuration=Release -p:Platform=x64
           Move-Item "Package/bin/x64/Release/en-us/Package.msi" "../../${{ env.FILENAME }}.msi"
       
-      - name: Upload Artifacts
+      - name: Upload Final Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: rustdesk-windows-builds
