@@ -1,3 +1,1 @@
-# RustDesk-Builder
-
-RustDesk Custom Builder for Roommatik.
+Custom Builder for Roommatik.
