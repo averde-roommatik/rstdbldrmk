@@ -7,7 +7,6 @@ env:
   RUSTDESK_VERSION: ${{ vars.RUSTDESK_VERSION || '1.4.3' }}
   FLUTTER_VERSION: "3.24.5"
   RUST_VERSION: "1.75"
-  
   FILENAME: ${{ vars.FILENAME || 'rustdesk' }}
   APP_NAME: ${{ vars.APP_NAME || 'RustDesk' }}
   COMPANY_NAME: ${{ vars.COMPANY_NAME || 'Purslane Ltd' }}
@@ -18,7 +17,6 @@ env:
   DELAY_FIX: ${{ vars.DELAY_FIX || 'true' }}
   RUN_AS_ADMIN: ${{ vars.RUN_AS_ADMIN || 'false' }}
   HIDE_CM: ${{ vars.HIDE_CM || 'false' }}
-  
   SERVER_IP: ${{ secrets.SERVER_IP }}
   PUBLIC_KEY: ${{ secrets.PUBLIC_KEY }}
   API_SERVER: ${{ secrets.API_SERVER }}
@@ -161,7 +159,9 @@ jobs:
       - name: Apply Flutter Icons
         if: hashFiles('self/assets/icon.png') != ''
         working-directory: rustdesk/flutter
-        run: flutter pub run flutter_launcher_icons
+        run: |
+          flutter pub get
+          flutter pub run flutter_launcher_icons
 
       - name: Build & Package
         working-directory: rustdesk
