@@ -36,17 +36,33 @@ jobs:
         with:
           path: self
 
+      - name: Checkout RustDesk Source Code
+        uses: actions/checkout@v4
+        with:
+          repository: rustdesk/rustdesk
+          ref: ${{ env.RUSTDESK_VERSION }}
+          path: rustdesk
+          
+      - name: Checkout RustDeskTempTopMostWindow Source Code
+        uses: actions/checkout@v4
+        with:
+          repository: rustdesk-org/RustDeskTempTopMostWindow
+          path: RustDeskTempTopMostWindow
+
       - name: Install Build Tools
         run: choco install -y git python311 llvm vcredist140 nsis imagemagick.app visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64" --no-progress
 
-      - name: Install Flutter & Patch
+      - name: Install Flutter
         uses: subosito/flutter-action@v2
-        with: { channel: "stable", flutter-version: "${{ env.FLUTTER_VERSION }}" }
-      - run: |
+        with:
+          channel: "stable"
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Patch Flutter SDK
+        shell: bash
+        run: |
           cd $(dirname $(dirname $(which flutter)))
           git apply ${{ github.workspace }}/rustdesk/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff
-        working-directory: rustdesk
-        shell: bash
         
       - name: Install Rust and Bridge Codegen
         uses: dtolnay/rust-toolchain@v1
@@ -59,14 +75,6 @@ jobs:
         with: { vcpkgGitCommitId: "${{ env.VCPKG_COMMIT_ID }}" }
       - run: vcpkg install ffmpeg:x64-windows-static
         env: { VCPKG_DEFAULT_TRIPLET: "x64-windows-static" }
-
-      - name: Checkout RustDesk
-        uses: actions/checkout@v4
-        with: { repository: "rustdesk/rustdesk", ref: "${{ env.RUSTDESK_VERSION }}", path: "rustdesk" }
-          
-      - name: Checkout RustDeskTempTopMostWindow
-        uses: actions/checkout@v4
-        with: { repository: "rustdesk-org/RustDeskTempTopMostWindow", path: "RustDeskTempTopMostWindow" }
 
       - name: Build WindowInjection.dll
         uses: microsoft/setup-msbuild@v2
@@ -82,10 +90,11 @@ jobs:
         working-directory: rustdesk/res
         shell: powershell
         run: |
-          Copy-Item "${{ github.workspace }}/self/assets/icon.png" -Destination "icon.png"
-          magick icon.png -define icon:auto-resize=256,64,48,32,16 icon.ico
-          Copy-Item "icon.ico" "tray-icon.ico"
-          
+          if (Test-Path "${{ github.workspace }}/self/assets/icon.png") {
+            Copy-Item "${{ github.workspace }}/self/assets/icon.png" -Destination "icon.png"
+            magick icon.png -define icon:auto-resize=256,64,48,32,16 icon.ico
+            Copy-Item "icon.ico" "tray-icon.ico"
+          }
           if (Test-Path "${{ github.workspace }}/self/assets/logo.png") {
             Copy-Item "${{ github.workspace }}/self/assets/logo.png" -Destination "logo.png"
           }
@@ -93,6 +102,8 @@ jobs:
       - name: Apply Text & Code Modifications
         working-directory: rustdesk
         shell: powershell
+        env:
+          ICON_BASE64: ${{ secrets.ICON_BASE64 }}
         run: |
           (Get-Content libs/hbb_common/src/config.rs).Replace('rs-ny.rustdesk.com', '${{ env.SERVER_IP }}') | Set-Content libs/hbb_common/src/config.rs
           (Get-Content libs/hbb_common/src/config.rs).Replace('OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=', '${{ env.PUBLIC_KEY }}') | Set-Content libs/hbb_common/src/config.rs
@@ -120,6 +131,7 @@ jobs:
           Set-Content -Path "custom.txt" -Value $base64Custom
           
       - name: Apply Flutter Icons
+        if: env.ICON_BASE64 != ''
         working-directory: rustdesk/flutter
         run: flutter pub run flutter_launcher_icons
 
