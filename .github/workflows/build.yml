@@ -115,6 +115,13 @@ jobs:
         with: { path: "C:/vcpkg_installed", key: "vcpkg-${{ runner.os }}-${{ hashFiles('rustdesk/vcpkg.json') }}" }
       - uses: Swatinem/rust-cache@v2
 
+      - name: Setup vcpkg environment
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgJsonGlob: "rustdesk/vcpkg.json"
+          vcpkgTriplet: "x64-windows-static"
+          vcpkgDirectory: "C:/vcpkg_installed/vcpkg"
+
       - name: Patch Flutter SDK
         shell: bash
         run: |
@@ -169,7 +176,7 @@ jobs:
         run: |
           python3 .\build.py --flutter --portable --skip-portable-pack
           $buildDir = "flutter/build/windows/x64/runner/Release"
-          Copy-Item "${{ github.workspace }}/WindowInjection.dll" $buildDir
+          Copy-Item "${{ github.workspace }}/rustdesk/WindowInjection.dll" $buildDir
           Copy-Item "custom.txt" $buildDir
           if (Test-Path "res/logo.png") { Copy-Item "res/logo.png" "$buildDir/data/flutter_assets/assets/" }
           Set-Location libs/portable
@@ -190,4 +197,4 @@ jobs:
           name: rustdesk-windows-builds
           path: |
             rustdesk/${{ env.FILENAME }}.exe
-            rustdesk/${{ env.FILENAME }}.msi
+            rustdesk/${{ env.FILENAME }}.msi```
