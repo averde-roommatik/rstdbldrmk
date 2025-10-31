@@ -113,7 +113,9 @@ jobs:
 
       - name: Cache vcpkg & Cargo
         uses: actions/cache@v4
-        with: { path: "C:/vcpkg_installed", key: "vcpkg-${{ runner.os }}-${{ hashFiles('rustdesk/vcpkg.json') }}" }
+        with:
+          path: "C:/vcpkg_installed"
+          key: "vcpkg-${{ runner.os }}-${{ hashFiles('rustdesk/vcpkg.json') }}-libopusfix"
       - uses: Swatinem/rust-cache@v2
 
       - name: Install vcpkg dependencies
@@ -123,6 +125,9 @@ jobs:
           vcpkgTriplet: 'x64-windows-static'
           vcpkgDirectory: 'C:/vcpkg_installed/vcpkg'
           runInstall: true
+
+      - name: Install libopus manually
+        run: vcpkg install libopus:x64-windows-static
 
       - name: Patch Flutter SDK
         shell: bash
@@ -175,6 +180,8 @@ jobs:
       - name: Build & Package
         working-directory: rustdesk
         shell: powershell
+        env:
+          CPLUS_INCLUDE_PATH: C:\vcpkg_installed\vcpkg\installed\x64-windows-static\include
         run: |
           python3 .\build.py --flutter --portable --skip-portable-pack
           $buildDir = "flutter/build/windows/x64/runner/Release"
