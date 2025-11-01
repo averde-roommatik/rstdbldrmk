@@ -43,8 +43,8 @@ jobs:
         uses: actions/checkout@v4
         with: { repository: "rustdesk-org/RustDeskTempTopMostWindow", path: "RustDeskTempTopMostWindow" }
 
-      - name: Install Tools (Choco, VS Build Tools, etc.)
-        run: choco install -y python311 llvm vcredist140 nsis imagemagick.app visualstudio2022-buildtools --package-parameters "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64" --no-progress
+      - name: Install Tools with Choco
+        run: choco install -y python311 llvm vcredist140 nsis imagemagick.app --no-progress
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@v1
