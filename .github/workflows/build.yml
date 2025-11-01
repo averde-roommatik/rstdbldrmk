@@ -93,7 +93,7 @@ jobs:
           path: dist/
 
   build-and-package-client:
-    name: 2️⃣ Build and Package Client (with Debugging)
+    name: 2️⃣ Build and Package Client (with Patched Dependency)
     needs: build-prerequisites
     runs-on: windows-2022
 
@@ -132,55 +132,30 @@ jobs:
           runInstall: true
           vcpkgTriplet: "x64-windows-static"
 
-      - name: 1. DEBUG - List vcpkg include directory contents
+      # 🔧 PASO 1: Clonar y corregir la dependencia magnum-opus
+      - name: Clone and Fix magnum-opus Dependency
         shell: powershell
         run: |
-          Write-Host "--- Verifying vcpkg installation for opus headers ---"
-          $vcpkg_include_path = "C:\vcpkg_installed\vcpkg\installed\x64-windows-static\include"
-          if (Test-Path $vcpkg_include_path) {
-            Write-Host "Listing contents of '$vcpkg_include_path':"
-            Get-ChildItem -Path $vcpkg_include_path -Filter "opus*.h"
-          } else {
-            Write-Host "ERROR: vcpkg include path '$vcpkg_include_path' does not exist!"
-          }
-          Write-Host "----------------------------------------------------"
-
-      - name: Fix Opus include headers for magnum-opus (with Debugging)
+          git clone https://github.com/rustdesk-org/magnum-opus deps/magnum-opus
+          $header_file = "deps/magnum-opus/opus_ffi.h"
+          Write-Host "Patching magnum-opus header file at: $header_file"
+          (Get-Content $header_file).Replace('<opus/opus_multistream.h>', '<opus_multistream.h>') | Set-Content $header_file
+          Write-Host "Patched content:"
+          Get-Content $header_file
+      
+      # 🔧 PASO 2: Modificar Cargo.toml para usar la dependencia local parcheada
+      - name: Patch Cargo.toml to use local dependency
+        working-directory: rustdesk
         shell: powershell
         run: |
-          $inc = "C:\vcpkg_installed\vcpkg\installed\x64-windows-static\include"
-          Write-Host "### DEBUG ### 2. Running the fix script. Include path is: '$inc'"
+          $cargo_toml_path = "Cargo.toml"
+          $patch_content = @"
 
-          if (!(Test-Path $inc)) {
-            Write-Host "### DEBUG ### FATAL: The include path does not exist. Aborting fix."
-            exit 1
-          }
-
-          Write-Host "### DEBUG ### Opus headers found in root include dir:"
-          Get-ChildItem "$inc" -Filter "opus*.h" | ForEach-Object { Write-Host $_.FullName }
-          
-          $opus_dir = "$inc\opus"
-          Write-Host "### DEBUG ### Target opus directory is: '$opus_dir'"
-
-          if (!(Test-Path $opus_dir)) {
-            Write-Host "### DEBUG ### Creating directory: '$opus_dir'"
-            New-Item -ItemType Directory -Force -Path $opus_dir | Out-Null
-          } else {
-            Write-Host "### DEBUG ### Directory '$opus_dir' already exists."
-          }
-
-          Write-Host "### DEBUG ### Copying opus*.h files to '$opus_dir'"
-          Get-ChildItem "$inc" -Filter "opus*.h" | ForEach-Object {
-            Write-Host "Copying $($_.Name)..."
-            Copy-Item $_.FullName -Destination $opus_dir -Force
-          }
-          
-          Write-Host "### DEBUG ### 3. Verification step. Contents of '$opus_dir':"
-          if (Test-Path $opus_dir) {
-            Get-ChildItem $opus_dir
-          } else {
-            Write-Host "### DEBUG ### ERROR: Directory '$opus_dir' was NOT created successfully."
-          }
+          [patch.crates-io]
+          magnum-opus = { path = "../deps/magnum-opus" }
+          "@
+          Add-Content -Path $cargo_toml_path -Value $patch_content
+          Write-Host "Appended patch section to $cargo_toml_path"
 
       - name: Patch Flutter SDK
         shell: bash
@@ -207,16 +182,6 @@ jobs:
           (Get-Content libs/hbb_common/src/config.rs).Replace('OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=', '${{ env.PUBLIC_KEY }}') | Set-Content libs/hbb_common/src/config.rs
           (Get-Content src/common.rs).Replace('https://admin.rustdesk.com', '${{ env.API_SERVER }}') | Set-Content src/common.rs
 
-      - name: 4. DEBUG - Check environment before build
-        shell: powershell
-        working-directory: rustdesk
-        run: |
-          Write-Host "--- Verifying environment variables for Cargo ---"
-          Write-Host "VCPKG_ROOT: $env:VCPKG_ROOT"
-          Write-Host "INCLUDE: $env:INCLUDE"
-          Write-Host "LIB: $env:LIB"
-          Write-Host "-------------------------------------------------"
-
       - name: Build & Package
         working-directory: rustdesk
         shell: powershell
@@ -224,7 +189,7 @@ jobs:
           python3 .\build.py --flutter --portable --skip-portable-pack --verbose
           $buildDir = "flutter/build/windows/x64/runner/Release"
           Copy-Item "${{ github.workspace }}/rustdesk/WindowInjection.dll" $buildDir
-          #Copy-Item "custom.txt" $buildDir
+          Copy-Item "custom.txt" $buildDir
           if (Test-Path "res/logo.png") { Copy-Item "res/logo.png" "$buildDir/data/flutter_assets/assets/" }
           Set-Location libs/portable
           python3 generate.py -f "../../$buildDir" -o . -e "../../$buildDir/rustdesk.exe"
