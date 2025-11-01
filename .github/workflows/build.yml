@@ -1,4 +1,4 @@
-name: Build Custom Windows Client (Single Job, Correct Vcpkg)
+name: Build Custom Windows Client (Final)
 
 on:
   workflow_dispatch:
@@ -107,6 +107,10 @@ jobs:
           (Get-Content libs/hbb_common/src/config.rs).Replace('rs-ny.rustdesk.com', '${{ env.SERVER_IP }}') | Set-Content libs/hbb_common/src/config.rs
           (Get-Content libs/hbb_common/src/config.rs).Replace('OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=', '${{ env.PUBLIC_KEY }}') | Set-Content libs/hbb_common/src/config.rs
           (Get-Content src/common.rs).Replace('https://admin.rustdesk.com', '${{ env.API_SERVER }}') | Set-Content src/common.rs
+
+      - name: Install Python dependencies for packaging
+        working-directory: rustdesk/libs/portable
+        run: pip3 install -r requirements.txt
 
       - name: Build & Package
         working-directory: rustdesk
