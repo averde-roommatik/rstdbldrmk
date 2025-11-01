@@ -44,7 +44,7 @@ jobs:
         with: { repository: "rustdesk-org/RustDeskTempTopMostWindow", path: "RustDeskTempTopMostWindow" }
 
       - name: Install Tools (Choco, VS Build Tools, etc.)
-        run: choco install -y python311 llvm vcredist140 nsis imagemagick.app visualstudio22buildtools --package-parameters "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64" --no-progress
+        run: choco install -y python311 llvm vcredist140 nsis imagemagick.app visualstudio2022-buildtools --package-parameters "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64" --no-progress
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@v1
@@ -83,7 +83,7 @@ jobs:
       - run: |
           cd RustDeskTempTopMostWindow
           git checkout 53b548a5398624f7149a382000397993542ad796
-          msbuild WindowInjection/WindowInjection.vcxproj -p:Configuration=Release -p:Platform=x64 -p:PlatformToolset=v143 /p:TargetVersion=Windows10
+          msbuild WindowInjection/WindowInjection.vcxproj -p:Configuration=Release -p:Platform=x64 -p:PlatformToolset=v143 -p:TargetVersion=Windows10
         shell: powershell
       - name: Copy WindowInjection.dll to rustdesk folder
         shell: powershell
@@ -107,10 +107,8 @@ jobs:
             [[ "${{env.FLUTTER_VERSION}}" == "3.24.5" ]] && git apply "flutter_3.24.4_dropdown_menu_enableFilter.diff"
             cd "${{ github.workspace }}/rustdesk"
           fi
-          
           sed -i -e 's|2ded7f146437a761ffe6981e2f742038f85ca68d|08a471bb8ceccdd50483c81cdfa8b81b07b14b87|' ./flutter/pubspec.lock
           sed -i -e 's|2ded7f146437a761ffe6981e2f742038f85ca68d|08a471bb8ceccdd50483c81cdfa8b81b07b14b87|' ./flutter/pubspec.yaml
-          
           sed -i -e "s|description = \"RustDesk Remote Desktop\"|description = \"${{ env.APP_NAME }}\"|g" ./Cargo.toml ./libs/portable/Cargo.toml
           sed -i -e "s|ProductName = \"RustDesk\"|ProductName = \"${{ env.APP_NAME }}\"|g" ./Cargo.toml ./libs/portable/Cargo.toml
           sed -i -e "s|FileDescription = \"RustDesk Remote Desktop\"|FileDescription = \"${{ env.APP_NAME }}\"|g" ./Cargo.toml ./libs/portable/Cargo.toml
@@ -121,12 +119,10 @@ jobs:
           sed -i -e "s|Purslane Ltd.|${{ env.COMPANY_NAME }}|g" ./res/setup.nsi
           sed -i -e "s|PURSLANE|${{ env.COMPANY_NAME }}|g" ./res/msi/preprocess.py
           sed -i -e "s|\"Copyright © 2025 Purslane Ltd. All rights reserved.\"|\"Copyright © 2025 ${{ env.COMPANY_NAME }}. All rights reserved.\"|g" ./flutter/windows/runner/Runner.rc
-          
           sed -i -e "s|Homepage: https://rustdesk.com|Homepage: ${{ env.CUSTOM_URL }}|g" ./build.py
           sed -i -e "s|https://rustdesk.com/privacy.html|${{ env.CUSTOM_URL }}/privacy.html|g" ./flutter/lib/desktop/pages/install_page.dart
           find ./flutter -name "*.dart" -exec sed -i -e "s|https://rustdesk.com|${{ env.CUSTOM_URL }}|g" {} \;
           sed -i -e "s|https://rustdesk.com/download|${{ env.DOWNLOAD_URL }}|g" ./flutter/lib/desktop/pages/desktop_home_page.dart ./flutter/lib/mobile/pages/connection_page.dart ./src/ui/index.tis
-          
           if [ "${{ env.DELAY_FIX }}" == "true" ]; then
             sed -i -e 's|!key.is_empty()|false|' ./src/client.rs
           fi
@@ -143,7 +139,6 @@ jobs:
             sed -i -e 's|updateUrl.isNotEmpty|false|' ./flutter/lib/desktop/pages/desktop_home_page.dart
             sed -i '/let (request, url) =/,/Ok(())/{/Ok(())/!d}' ./src/common.rs
           fi
-
           curl -s https://raw.githubusercontent.com/bryangerlach/rdgen/refs/heads/master/.github/patches/allowCustom.diff -o allowCustom.diff && git apply allowCustom.diff
           curl -s https://raw.githubusercontent.com/bryangerlach/rdgen/refs/heads/master/.github/patches/removeSetupServerTip.diff -o removeSetupServerTip.diff && git apply removeSetupServerTip.diff
 
@@ -179,26 +174,21 @@ jobs:
         shell: powershell
         run: |
           python3 .\build.py --flutter --portable --hwcodec --skip-portable-pack
-          
           $buildDir = "flutter/build/windows/x64/runner/Release"
           New-Item -ItemType Directory -Force -Path ".\rustdesk_build_output"
           Copy-Item -Path "$buildDir\*" -Destination ".\rustdesk_build_output" -Recurse
-          
           Copy-Item ".\WindowInjection.dll" ".\rustdesk_build_output\"
-
           Invoke-WebRequest -Uri https://github.com/rustdesk-org/rdev/releases/download/usbmmidd_v2/usbmmidd_v2.zip -OutFile usbmmidd_v2.zip
           Expand-Archive usbmmidd_v2.zip -DestinationPath . -Force
           Remove-Item -Path usbmmidd_v2\Win32 -Recurse
           Remove-Item -Path "usbmmidd_v2\deviceinstaller64.exe", "usbmmidd_v2\deviceinstaller.exe", "usbmmidd_v2\usbmmidd.bat"
           Copy-Item -Path ".\usbmmidd_v2\*" -Destination ".\rustdesk_build_output\usbmmidd_v2" -Recurse
-          
           try {
             Invoke-WebRequest -Uri https://github.com/rustdesk/hbb_common/releases/download/driver/rustdesk_printer_driver_v4-1.4.zip -OutFile printer.zip
             Expand-Archive printer.zip -DestinationPath ".\rustdesk_build_output\drivers\RustDeskPrinterDriver" -Force
           } catch {
               Write-Host "Advertencia: Falló la descarga del driver de impresora. Continuando sin él."
           }
-
           Set-Content -Path ".\rustdesk_build_output\custom.txt" -Value '${{ env.CUSTOM_TXT_CONTENT }}'
       
       - name: Package Final Executables (EXE and MSI)
@@ -206,12 +196,10 @@ jobs:
         shell: powershell
         run: |
           $finalBuildDir = ".\rustdesk_build_output"
-          
           Set-Location libs/portable
           python3 generate.py -f "../../$finalBuildDir" -o . -e "../../$finalBuildDir/rustdesk.exe"
           Move-Item "../../target/release/rustdesk-portable-packer.exe" "../../${{ env.FILENAME }}.exe"
           Set-Location ../../
-
           $msiAppName = "${{ env.APP_NAME }}".Trim().Replace(' ','_')
           Copy-Item "$finalBuildDir/rustdesk.exe" "$finalBuildDir/$msiAppName.exe"
           Set-Location res/msi
