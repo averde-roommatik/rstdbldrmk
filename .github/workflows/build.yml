@@ -7,23 +7,23 @@ env:
   RUSTDESK_VERSION: ${{ vars.RUSTDESK_VERSION || '1.4.3' }}
   FLUTTER_VERSION: "3.24.5"
   RUST_VERSION: "1.75"
-  LLVM_VERSION: "15.0.6"
   VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
   VCPKG_DEFAULT_HOST_TRIPLET: "x64-windows-static"
   FILENAME: ${{ vars.FILENAME || 'rustdesk' }}
   APP_NAME: ${{ vars.APP_NAME || 'RustDesk' }}
   COMPANY_NAME: ${{ vars.COMPANY_NAME || 'Purslane Ltd' }}
-  CUSTOM_URL: ${{ vars.CUSTOM_URL }}
-  DOWNLOAD_URL: ${{ vars.DOWNLOAD_URL }}
-  DIRECTION: ${{ vars.DIRECTION || 'both' }}
-  DENY_LAN: ${{ vars.DENY_LAN || 'false' }}
-  DELAY_FIX: ${{ vars.DELAY_FIX || 'true' }}
-  RUN_AS_ADMIN: ${{ vars.RUN_AS_ADMIN || 'false' }}
-  HIDE_CM: ${{ vars.HIDE_CM || 'false' }}
+  CUSTOM_URL: ${{ vars.CUSTOM_URL || 'https://rustdesk.com' }}
+  DOWNLOAD_URL: ${{ vars.DOWNLOAD_URL || 'https://rustdesk.com/download' }}
   SERVER_IP: ${{ secrets.SERVER_IP }}
   PUBLIC_KEY: ${{ secrets.PUBLIC_KEY }}
   API_SERVER: ${{ secrets.API_SERVER }}
   PERMANENT_PASSWORD: ${{ secrets.PERMANENT_PASSWORD }}
+  DELAY_FIX: ${{ vars.DELAY_FIX || 'true' }}
+  RUN_AS_ADMIN: ${{ vars.RUN_AS_ADMIN || 'false' }}
+  CUSTOM_TXT_CONTENT: ${{ vars.CUSTOM_TXT_CONTENT || '{}' }}
+  CYCLE_MONITOR_FEATURE: ${{ vars.CYCLE_MONITOR_FEATURE || 'false' }}
+  X_OFFLINE_FEATURE: ${{ vars.X_OFFLINE_FEATURE || 'false' }}
+  REMOVE_NEW_VERSION_NOTIF_FEATURE: ${{ vars.REMOVE_NEW_VERSION_NOTIF_FEATURE || 'false' }}
 
 jobs:
   build-windows-client:
@@ -31,26 +31,38 @@ jobs:
     runs-on: windows-2022
 
     steps:
-      - name: Checkout All Sources
+      - name: Checkout All Sources (self repo)
         uses: actions/checkout@v4
         with: { path: "self" }
 
-      - uses: actions/checkout@v4
+      - name: Checkout RustDesk source
+        uses: actions/checkout@v4
         with: { repository: "rustdesk/rustdesk", ref: "${{ env.RUSTDESK_VERSION }}", path: "rustdesk", submodules: "recursive" }
 
-      - uses: actions/checkout@v4
+      - name: Checkout RustDeskTempTopMostWindow
+        uses: actions/checkout@v4
         with: { repository: "rustdesk-org/RustDeskTempTopMostWindow", path: "RustDeskTempTopMostWindow" }
 
-      - name: Install Tools (Rust, Choco, Flutter)
+      - name: Install Tools (Choco, VS Build Tools, etc.)
+        run: choco install -y python311 llvm vcredist140 nsis imagemagick.app visualstudio22buildtools --package-parameters "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64" --no-progress
+
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@v1
         with: { toolchain: "${{ env.RUST_VERSION }}", targets: "x86_64-pc-windows-msvc", components: "rustfmt" }
 
-      - run: choco install -y python311 llvm vcredist140 nsis imagemagick.app visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64" --no-progress
-
-      - uses: subosito/flutter-action@v2
+      - name: Install Flutter SDK
+        uses: subosito/flutter-action@v2
         with: { channel: "stable", flutter-version: "${{ env.FLUTTER_VERSION }}", cache: true }
+      
+      - name: Replace Flutter engine with RustDesk custom engine
+        run: |
+          flutter doctor -v
+          flutter precache --windows
+          Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile windows-x64-release.zip
+          Expand-Archive -Path windows-x64-release.zip -DestinationPath . -Force
+          Copy-Item -Path ".\windows-x64-release\*" -Destination "C:\hostedtoolcache\windows\flutter\stable-${{ env.FLUTTER_VERSION }}-x64\bin\cache\artifacts\engine\windows-x64-release\" -Recurse -Force
 
-      - name: Install flutter_rust_bridge
+      - name: Install flutter_rust_bridge_codegen
         run: cargo install flutter_rust_bridge_codegen --version 1.80.1 --features "uuid" --locked
 
       - name: Setup vcpkg
@@ -83,16 +95,59 @@ jobs:
           cd flutter && flutter pub get && cd ..
           flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart --c-output ./flutter/macos/Runner/bridge_generated.h
 
-      - name: Patch Flutter SDK
+      - name: Apply All Code Customizations
+        working-directory: rustdesk
         shell: bash
         run: |
           FLUTTER_SDK_DIR=$(dirname $(dirname $(which flutter)))
           PATCH_FILE="${{ github.workspace }}/rustdesk/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff"
-          cp "$PATCH_FILE" "$FLUTTER_SDK_DIR/"
-          cd "$FLUTTER_SDK_DIR"
-          git apply "flutter_3.24.4_dropdown_menu_enableFilter.diff"
+          if [ -f "$PATCH_FILE" ]; then
+            cp "$PATCH_FILE" "$FLUTTER_SDK_DIR/"
+            cd "$FLUTTER_SDK_DIR"
+            [[ "${{env.FLUTTER_VERSION}}" == "3.24.5" ]] && git apply "flutter_3.24.4_dropdown_menu_enableFilter.diff"
+            cd "${{ github.workspace }}/rustdesk"
+          fi
+          
+          sed -i -e 's|2ded7f146437a761ffe6981e2f742038f85ca68d|08a471bb8ceccdd50483c81cdfa8b81b07b14b87|' ./flutter/pubspec.lock
+          sed -i -e 's|2ded7f146437a761ffe6981e2f742038f85ca68d|08a471bb8ceccdd50483c81cdfa8b81b07b14b87|' ./flutter/pubspec.yaml
+          
+          sed -i -e "s|description = \"RustDesk Remote Desktop\"|description = \"${{ env.APP_NAME }}\"|g" ./Cargo.toml ./libs/portable/Cargo.toml
+          sed -i -e "s|ProductName = \"RustDesk\"|ProductName = \"${{ env.APP_NAME }}\"|g" ./Cargo.toml ./libs/portable/Cargo.toml
+          sed -i -e "s|FileDescription = \"RustDesk Remote Desktop\"|FileDescription = \"${{ env.APP_NAME }}\"|g" ./Cargo.toml ./libs/portable/Cargo.toml
+          sed -i -e "s|\"RustDesk Remote Desktop\"|\"${{ env.APP_NAME }}\"|g" ./flutter/windows/runner/Runner.rc
+          sed -i -e "s|\"RustDesk\"|\"${{ env.APP_NAME }}\"|g" ./flutter/windows/runner/Runner.rc
+          find ./src/lang -name "*.rs" -exec sed -i -e "s|RustDesk|${{ env.APP_NAME }}|g" {} \;
+          sed -i -e "s|Purslane Ltd|${{ env.COMPANY_NAME }}|g" ./flutter/lib/desktop/pages/desktop_setting_page.dart ./res/msi/preprocess.py ./flutter/windows/runner/Runner.rc ./Cargo.toml ./libs/portable/Cargo.toml
+          sed -i -e "s|Purslane Ltd.|${{ env.COMPANY_NAME }}|g" ./res/setup.nsi
+          sed -i -e "s|PURSLANE|${{ env.COMPANY_NAME }}|g" ./res/msi/preprocess.py
+          sed -i -e "s|\"Copyright © 2025 Purslane Ltd. All rights reserved.\"|\"Copyright © 2025 ${{ env.COMPANY_NAME }}. All rights reserved.\"|g" ./flutter/windows/runner/Runner.rc
+          
+          sed -i -e "s|Homepage: https://rustdesk.com|Homepage: ${{ env.CUSTOM_URL }}|g" ./build.py
+          sed -i -e "s|https://rustdesk.com/privacy.html|${{ env.CUSTOM_URL }}/privacy.html|g" ./flutter/lib/desktop/pages/install_page.dart
+          find ./flutter -name "*.dart" -exec sed -i -e "s|https://rustdesk.com|${{ env.CUSTOM_URL }}|g" {} \;
+          sed -i -e "s|https://rustdesk.com/download|${{ env.DOWNLOAD_URL }}|g" ./flutter/lib/desktop/pages/desktop_home_page.dart ./flutter/lib/mobile/pages/connection_page.dart ./src/ui/index.tis
+          
+          if [ "${{ env.DELAY_FIX }}" == "true" ]; then
+            sed -i -e 's|!key.is_empty()|false|' ./src/client.rs
+          fi
+          if [ "${{ env.RUN_AS_ADMIN }}" == "true" ]; then
+            sed -i '/<\/compatibility>/a \ \ \ \ \ \ \ \ <security>\n \ \ \ \ \ \ \ \ \ \ <requestedExecutionLevel level="requireAdministrator" uiAccess="false"/>\n \ \ \ \ \ \ \ \ </security>' ./flutter/windows/runner/runner.exe.manifest
+          fi
+          if [ "${{ env.CYCLE_MONITOR_FEATURE }}" == "true" ]; then
+            curl -s https://raw.githubusercontent.com/bryangerlach/rdgen/refs/heads/master/.github/patches/cycle_monitor.diff -o cycle_monitor.diff && git apply cycle_monitor.diff
+          fi
+          if [ "${{ env.X_OFFLINE_FEATURE }}" == "true" ]; then
+            curl -s https://raw.githubusercontent.com/bryangerlach/rdgen/refs/heads/master/.github/patches/xoffline.diff -o xoffline.diff && git apply xoffline.diff
+          fi
+          if [ "${{ env.REMOVE_NEW_VERSION_NOTIF_FEATURE }}" == "true" ]; then
+            sed -i -e 's|updateUrl.isNotEmpty|false|' ./flutter/lib/desktop/pages/desktop_home_page.dart
+            sed -i '/let (request, url) =/,/Ok(())/{/Ok(())/!d}' ./src/common.rs
+          fi
 
-      - name: Apply Custom Config
+          curl -s https://raw.githubusercontent.com/bryangerlach/rdgen/refs/heads/master/.github/patches/allowCustom.diff -o allowCustom.diff && git apply allowCustom.diff
+          curl -s https://raw.githubusercontent.com/bryangerlach/rdgen/refs/heads/master/.github/patches/removeSetupServerTip.diff -o removeSetupServerTip.diff && git apply removeSetupServerTip.diff
+
+      - name: Apply Custom Branding (Icon, Logo, Server) and Build Icons
         working-directory: rustdesk
         shell: powershell
         run: |
@@ -100,6 +155,10 @@ jobs:
             Copy-Item "${{ github.workspace }}/self/assets/icon.png" -Destination "res/icon.png"
             magick res/icon.png -define icon:auto-resize=256,64,48,32,16 res/icon.ico
             Copy-Item "res/icon.ico" "res/tray-icon.ico"
+            cd flutter
+            flutter pub get
+            flutter pub run flutter_launcher_icons
+            cd ..
           }
           if (Test-Path "${{ github.workspace }}/self/assets/logo.png") {
             Copy-Item "${{ github.workspace }}/self/assets/logo.png" -Destination "res/logo.png"
@@ -115,22 +174,48 @@ jobs:
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
 
-      - name: Build & Package
+      - name: Build RustDesk and Download Resources
         working-directory: rustdesk
         shell: powershell
         run: |
-          python3 .\build.py --flutter --portable --skip-portable-pack
+          python3 .\build.py --flutter --portable --hwcodec --skip-portable-pack
+          
           $buildDir = "flutter/build/windows/x64/runner/Release"
-          Copy-Item "WindowInjection.dll" $buildDir
-          if (Test-Path "res/logo.png") { Copy-Item "res/logo.png" "$buildDir/data/flutter_assets/assets/" }
+          New-Item -ItemType Directory -Force -Path ".\rustdesk_build_output"
+          Copy-Item -Path "$buildDir\*" -Destination ".\rustdesk_build_output" -Recurse
+          
+          Copy-Item ".\WindowInjection.dll" ".\rustdesk_build_output\"
+
+          Invoke-WebRequest -Uri https://github.com/rustdesk-org/rdev/releases/download/usbmmidd_v2/usbmmidd_v2.zip -OutFile usbmmidd_v2.zip
+          Expand-Archive usbmmidd_v2.zip -DestinationPath . -Force
+          Remove-Item -Path usbmmidd_v2\Win32 -Recurse
+          Remove-Item -Path "usbmmidd_v2\deviceinstaller64.exe", "usbmmidd_v2\deviceinstaller.exe", "usbmmidd_v2\usbmmidd.bat"
+          Copy-Item -Path ".\usbmmidd_v2\*" -Destination ".\rustdesk_build_output\usbmmidd_v2" -Recurse
+          
+          try {
+            Invoke-WebRequest -Uri https://github.com/rustdesk/hbb_common/releases/download/driver/rustdesk_printer_driver_v4-1.4.zip -OutFile printer.zip
+            Expand-Archive printer.zip -DestinationPath ".\rustdesk_build_output\drivers\RustDeskPrinterDriver" -Force
+          } catch {
+              Write-Host "Advertencia: Falló la descarga del driver de impresora. Continuando sin él."
+          }
+
+          Set-Content -Path ".\rustdesk_build_output\custom.txt" -Value '${{ env.CUSTOM_TXT_CONTENT }}'
+      
+      - name: Package Final Executables (EXE and MSI)
+        working-directory: rustdesk
+        shell: powershell
+        run: |
+          $finalBuildDir = ".\rustdesk_build_output"
+          
           Set-Location libs/portable
-          python3 generate.py -f "../../$buildDir" -o . -e "../../$buildDir/rustdesk.exe"
+          python3 generate.py -f "../../$finalBuildDir" -o . -e "../../$finalBuildDir/rustdesk.exe"
           Move-Item "../../target/release/rustdesk-portable-packer.exe" "../../${{ env.FILENAME }}.exe"
           Set-Location ../../
+
           $msiAppName = "${{ env.APP_NAME }}".Trim().Replace(' ','_')
-          Copy-Item "$buildDir/rustdesk.exe" "$buildDir/$msiAppName.exe"
+          Copy-Item "$finalBuildDir/rustdesk.exe" "$finalBuildDir/$msiAppName.exe"
           Set-Location res/msi
-          python3 preprocess.py --app-name "$msiAppName" --arp -d "../../$buildDir"
+          python3 preprocess.py --app-name "$msiAppName" --arp -d "../../$finalBuildDir"
           nuget restore msi.sln
           msbuild msi.sln -p:Configuration=Release -p:Platform=x64
           Move-Item "Package/bin/x64/Release/en-us/Package.msi" "../../${{ env.FILENAME }}.msi"
