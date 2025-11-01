@@ -114,9 +114,9 @@ jobs:
           sed -i -e "s|\"RustDesk Remote Desktop\"|\"${{ env.APP_NAME }}\"|g" ./flutter/windows/runner/Runner.rc
           sed -i -e "s|\"RustDesk\"|\"${{ env.APP_NAME }}\"|g" ./flutter/windows/runner/Runner.rc
           find ./src/lang -name "*.rs" -exec sed -i -e "s|RustDesk|${{ env.APP_NAME }}|g" {} \;
-          sed -i -e "s|Purslane Ltd|${{ env.COMPANY_NAME }}|g" ./flutter/lib/desktop/pages/desktop_setting_page.dart ./res/msi/preprocess.py ./flutter/windows/runner/Runner.rc ./Cargo.toml ./libs/portable/Cargo.toml
+          sed -i -e "s|Purslane Ltd|${{ env.COMPANY_NAME }}|g" ./flutter/lib/desktop/pages/desktop_setting_page.dart ./res/msi/preprocess.py ./Cargo.toml ./libs/portable/Cargo.toml
           sed -i -e "s|PURSLANE|${{ env.COMPANY_NAME }}|g" ./res/msi/preprocess.py
-          sed -i -e "s|\"Copyright © 2025 Purslane Ltd. All rights reserved.\"|\"Copyright © 2025 ${{ env.COMPANY_NAME }}. All rights reserved.\"|g" ./flutter/windows/runner/Runner.rc
+          sed -i -e "s|Purslane Ltd|${{ env.COMPANY_NAME }}|g" ./flutter/windows/runner/Runner.rc
           sed -i -e "s|Homepage: https://rustdesk.com|Homepage: ${{ env.CUSTOM_URL }}|g" ./build.py
           sed -i -e "s|https://rustdesk.com/privacy.html|${{ env.CUSTOM_URL }}/privacy.html|g" ./flutter/lib/desktop/pages/install_page.dart
           find ./flutter -name "*.dart" -exec sed -i -e "s|https://rustdesk.com|${{ env.CUSTOM_URL }}|g" {} \;
