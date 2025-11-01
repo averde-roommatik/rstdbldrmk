@@ -1,4 +1,4 @@
-name: Build Custom Windows Client (Single Job)
+name: Build Custom Windows Client (Single Job, Correct Vcpkg)
 
 on:
   workflow_dispatch:
@@ -10,7 +10,6 @@ env:
   LLVM_VERSION: "15.0.6"
   VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
   VCPKG_DEFAULT_HOST_TRIPLET: "x64-windows-static"
-
   FILENAME: ${{ vars.FILENAME || 'rustdesk' }}
   APP_NAME: ${{ vars.APP_NAME || 'RustDesk' }}
   COMPANY_NAME: ${{ vars.COMPANY_NAME || 'Purslane Ltd' }}
@@ -57,11 +56,15 @@ jobs:
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
         with:
-          vcpkgJsonGlob: "rustdesk/vcpkg.json"
           vcpkgDirectory: "C:/vcpkg_installed/vcpkg"
           vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
-          runInstall: true
-          vcpkgTriplet: "x64-windows-static"
+          runInstall: false
+
+      - name: Install vcpkg dependencies
+        working-directory: rustdesk
+        shell: bash
+        run: |
+          vcpkg install --triplet ${{ env.VCPKG_DEFAULT_HOST_TRIPLET }} --x-install-root="$VCPKG_ROOT/installed"
 
       - name: Build WindowInjection DLL
         uses: microsoft/setup-msbuild@v2
@@ -79,7 +82,6 @@ jobs:
         run: |
           cd flutter && flutter pub get && cd ..
           flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart --c-output ./flutter/macos/Runner/bridge_generated.h
-
 
       - name: Patch Flutter SDK
         shell: bash
@@ -105,22 +107,6 @@ jobs:
           (Get-Content libs/hbb_common/src/config.rs).Replace('rs-ny.rustdesk.com', '${{ env.SERVER_IP }}') | Set-Content libs/hbb_common/src/config.rs
           (Get-Content libs/hbb_common/src/config.rs).Replace('OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=', '${{ env.PUBLIC_KEY }}') | Set-Content libs/hbb_common/src/config.rs
           (Get-Content src/common.rs).Replace('https://admin.rustdesk.com', '${{ env.API_SERVER }}') | Set-Content src/common.rs
-      
-      - name: FINAL CHECK - Verify Environment before Build
-        shell: powershell
-        run: |
-          Write-Host "--- Verifying VCPKG_ROOT ---"
-          Write-Host "VCPKG_ROOT is: $env:VCPKG_ROOT"
-          if (-not $env:VCPKG_ROOT) { Write-Error "VCPKG_ROOT IS NOT SET!"; exit 1 }
-          
-          Write-Host "--- Listing opus headers in vcpkg include directory ---"
-          $includePath = "$($env:VCPKG_ROOT)/installed/${{ env.VCPKG_DEFAULT_HOST_TRIPLET }}/include"
-          if (Test-Path $includePath) {
-            Get-ChildItem -Path $includePath -Filter "opus*.h"
-          } else {
-            Write-Error "VCPKG include path not found at $includePath"
-            exit 1
-          }
 
       - name: Build & Package
         working-directory: rustdesk
@@ -128,8 +114,7 @@ jobs:
         run: |
           python3 .\build.py --flutter --portable --skip-portable-pack
           $buildDir = "flutter/build/windows/x64/runner/Release"
-          Copy-Item "WindowInjection.dll" $buildDir # Copiamos el DLL que ya está en la carpeta rustdesk
-          #Copy-Item "custom.txt" $buildDir
+          Copy-Item "WindowInjection.dll" $buildDir
           if (Test-Path "res/logo.png") { Copy-Item "res/logo.png" "$buildDir/data/flutter_assets/assets/" }
           Set-Location libs/portable
           python3 generate.py -f "../../$buildDir" -o . -e "../../$buildDir/rustdesk.exe"
