@@ -112,6 +112,9 @@ jobs:
         working-directory: rustdesk/libs/portable
         run: pip3 install -r requirements.txt
 
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
       - name: Build & Package
         working-directory: rustdesk
         shell: powershell
@@ -129,7 +132,7 @@ jobs:
           Set-Location res/msi
           python3 preprocess.py --app-name "$msiAppName" --arp -d "../../$buildDir"
           nuget restore msi.sln
-          & "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\amd64\msbuild.exe" msi.sln -p:Configuration=Release -p:Platform=x64
+          msbuild msi.sln -p:Configuration=Release -p:Platform=x64
           Move-Item "Package/bin/x64/Release/en-us/Package.msi" "../../${{ env.FILENAME }}.msi"
 
       - name: Upload Final Artifacts
