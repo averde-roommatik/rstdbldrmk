@@ -186,7 +186,7 @@ jobs:
         working-directory: rustdesk
         shell: powershell
         run: |
-          python3 .\build.py --flutter --portable --skip-portable-pack --verbose
+          python3 .\build.py --flutter --portable --skip-portable-pack
           $buildDir = "flutter/build/windows/x64/runner/Release"
           Copy-Item "${{ github.workspace }}/rustdesk/WindowInjection.dll" $buildDir
           Copy-Item "custom.txt" $buildDir
