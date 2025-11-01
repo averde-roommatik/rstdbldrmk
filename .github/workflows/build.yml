@@ -124,7 +124,7 @@ jobs:
           python3 generate.py -f "../../$buildDir" -o . -e "../../$buildDir/rustdesk.exe"
           Move-Item "../../target/release/rustdesk-portable-packer.exe" "../../${{ env.FILENAME }}.exe"
           Set-Location ../../
-          $msiAppName = "${{ env.APP_NAME }}".Replace(' ','_')
+          $msiAppName = "${{ env.APP_NAME }}".Trim().Replace(' ','_')
           Copy-Item "$buildDir/rustdesk.exe" "$buildDir/$msiAppName.exe"
           Set-Location res/msi
           python3 preprocess.py --app-name "$msiAppName" --arp -d "../../$buildDir"
