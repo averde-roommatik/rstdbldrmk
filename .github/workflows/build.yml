@@ -45,6 +45,12 @@ jobs:
         uses: actions/checkout@v4
         with: { repository: "rustdesk-org/RustDeskTempTopMostWindow", path: "RustDeskTempTopMostWindow" }
 
+      - name: DEBUG - Verify asset files exist
+        shell: bash
+        run: |
+          echo "--- Checking for asset files in 'self' directory ---"
+          ls -R self
+
       - name: Install Tools with Choco
         run: choco install -y python311 llvm vcredist140 nsis imagemagick.app --no-progress
 
@@ -62,7 +68,7 @@ jobs:
           flutter precache --windows
           Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile windows-x64-release.zip
           Expand-Archive -Path windows-x64-release.zip -DestinationPath ".\windows-x64-release" -Force
-          Copy-Item -Path ".\windows-x64-release\*" -Destination "C:\hostedtoolcache\windows\flutter\stable-${{ env.FLUTTER_VERSION }}-x64\bin\cache\artifacts\engine\windows-x64-release\" -Recurse -Force
+          Copy-Item -Path ".\windows-x66-release\*" -Destination "C:\hostedtoolcache\windows\flutter\stable-${{ env.FLUTTER_VERSION }}-x64\bin\cache\artifacts\engine\windows-x64-release\" -Recurse -Force
 
       - name: Install flutter_rust_bridge_codegen
         run: cargo install flutter_rust_bridge_codegen --version 1.80.1 --features "uuid" --locked
@@ -101,6 +107,8 @@ jobs:
         working-directory: rustdesk
         shell: bash
         run: |
+          git apply "${{ github.workspace }}/self/.github/patches/allowCustom.diff" || echo "CRITICAL WARNING: allowCustom patch failed. Custom options will be ignored."
+          
           FLUTTER_SDK_DIR=$(dirname $(dirname $(which flutter)))
           PATCH_FILE="${{ github.workspace }}/self/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff"
           if [ -f "$PATCH_FILE" ]; then
@@ -138,10 +146,9 @@ jobs:
           if [ "${{ env.REMOVE_NEW_VERSION_NOTIF_FEATURE }}" == "true" ]; then
             sed -i -e 's#updateUrl.isNotEmpty#false#' ./flutter/lib/desktop/pages/desktop_home_page.dart
           fi
-          git apply "${{ github.workspace }}/self/.github/patches/allowCustom.diff" || echo "Warning: allowCustom patch failed."
           git apply "${{ github.workspace }}/self/.github/patches/removeSetupServerTip.diff" || echo "Warning: removeSetupServerTip patch failed."
 
-      - name: Apply Custom Branding (Icon, Logo, Server) and Build Icons
+      - name: Apply Custom Branding and Build Icons
         working-directory: rustdesk
         shell: powershell
         run: |
@@ -157,28 +164,22 @@ jobs:
           if (Test-Path "${{ github.workspace }}/self/assets/logo.png") {
             Copy-Item "${{ github.workspace }}/self/assets/logo.png" -Destination "res/logo.png"
           }
+
+      - name: DEBUG - Verify branding files
+        working-directory: rustdesk
+        shell: bash
+        run: |
+          echo "--- Checking for processed branding files in 'rustdesk/res' directory ---"
+          ls -R res
+
+      - name: Set Custom Server Configuration
+        working-directory: rustdesk
+        shell: powershell
+        run: |
           (Get-Content libs/hbb_common/src/config.rs).Replace('rs-ny.rustdesk.com', '${{ env.SERVER_IP }}') | Set-Content libs/hbb_common/src/config.rs
           (Get-Content libs/hbb_common/src/config.rs).Replace('OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=', '${{ env.PUBLIC_KEY }}') | Set-Content libs/hbb_common/src/config.rs
           (Get-Content src/common.rs).Replace('https://admin.rustdesk.com', '${{ env.API_SERVER }}') | Set-Content src/common.rs
       
-      - name: Generate Custom Options
-        id: custom_options
-        shell: bash
-        run: |
-          options=""
-          if [ "${{ env.DENY_LAN }}" == "true" ]; then
-            options="${options}enable-lan-discovery=N,"
-          fi
-          if [ "${{ env.DIRECTION }}" == "incoming" ]; then
-            options="${options}in-only=Y,"
-          elif [ "${{ env.DIRECTION }}" == "outgoing" ]; then
-            options="${options}out-only=Y,"
-          fi
-          if [ "${{ env.HIDE_CM }}" == "true" ]; then
-            options="${options}hide-cm=Y,"
-          fi
-          echo "options_string=${options}" >> $GITHUB_ENV
-
       - name: Install Python dependencies for packaging
         working-directory: rustdesk/libs/portable
         run: pip3 install -r requirements.txt
@@ -191,10 +192,46 @@ jobs:
         shell: powershell
         run: |
           python3 .\build.py --flutter --portable --hwcodec --skip-portable-pack
-          $buildDir = "flutter/build/windows/x64/runner/Release"
-          New-Item -ItemType Directory -Force -Path ".\rustdesk_build_output"
-          Copy-Item -Path "$buildDir\*" -Destination ".\rustdesk_build_output" -Recurse
-          Copy-Item ".\WindowInjection.dll" ".\rustdesk_build_output\"
+      
+      - name: Prepare Final Build Directory and Custom Options
+        working-directory: rustdesk
+        shell: bash
+        run: |
+          # Prepare directory
+          mkdir -p ./rustdesk_build_output
+          cp -r flutter/build/windows/x64/runner/Release/* ./rustdesk_build_output/
+          cp ./WindowInjection.dll ./rustdesk_build_output/
+
+          # Generate custom options string
+          options=""
+          if [ ! -z "${{ env.PERMANENT_PASSWORD }}" ]; then
+            options="password=${{ env.PERMANENT_PASSWORD }},"
+          fi
+          if [ "${{ env.DENY_LAN }}" == "true" ]; then
+            options="${options}enable-lan-discovery=N,"
+          fi
+          if [ "${{ env.DIRECTION }}" == "incoming" ]; then
+            options="${options}in-only=Y,"
+          elif [ "${{ env.DIRECTION }}" == "outgoing" ]; then
+            options="${options}out-only=Y,"
+          fi
+          if [ "${{ env.HIDE_CM }}" == "true" ]; then
+            options="${options}hide-cm=Y,"
+          fi
+
+          # Create custom.txt in the final build directory
+          echo -n "$options" > ./rustdesk_build_output/custom.txt
+          
+          echo "--- Content of custom.txt ---"
+          cat ./rustdesk_build_output/custom.txt
+          echo
+          echo "--- Final build directory contents ---"
+          ls -R ./rustdesk_build_output
+
+      - name: Download Additional Resources
+        working-directory: rustdesk
+        shell: powershell
+        run: |
           Invoke-WebRequest -Uri https://github.com/rustdesk-org/rdev/releases/download/usbmmidd_v2/usbmmidd_v2.zip -OutFile usbmmidd_v2.zip
           Expand-Archive usbmmidd_v2.zip -DestinationPath . -Force
           Remove-Item -Path usbmmidd_v2\Win32 -Recurse
@@ -206,7 +243,6 @@ jobs:
           } catch {
               Write-Host "Warning: Failed to download the printer driver. Continuing without it."
           }
-          Set-Content -Path ".\rustdesk_build_output\custom.txt" -Value '${{ env.options_string }}'
       
       - name: Package Final Executables (EXE and MSI)
         working-directory: rustdesk
