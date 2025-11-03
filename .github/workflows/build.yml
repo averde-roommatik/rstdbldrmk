@@ -45,12 +45,6 @@ jobs:
         uses: actions/checkout@v4
         with: { repository: "rustdesk-org/RustDeskTempTopMostWindow", path: "RustDeskTempTopMostWindow" }
 
-      - name: DEBUG - Verify asset files exist
-        shell: bash
-        run: |
-          echo "--- Checking for asset files in 'self' directory ---"
-          ls -R self
-
       - name: Install Tools with Choco
         run: choco install -y python311 llvm vcredist140 nsis imagemagick.app --no-progress
 
@@ -68,7 +62,7 @@ jobs:
           flutter precache --windows
           Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile windows-x64-release.zip
           Expand-Archive -Path windows-x64-release.zip -DestinationPath ".\windows-x64-release" -Force
-          Copy-Item -Path ".\windows-x66-release\*" -Destination "C:\hostedtoolcache\windows\flutter\stable-${{ env.FLUTTER_VERSION }}-x64\bin\cache\artifacts\engine\windows-x64-release\" -Recurse -Force
+          Copy-Item -Path ".\windows-x64-release\*" -Destination "C:\hostedtoolcache\windows\flutter\stable-${{ env.FLUTTER_VERSION }}-x64\bin\cache\artifacts\engine\windows-x64-release\" -Recurse -Force
 
       - name: Install flutter_rust_bridge_codegen
         run: cargo install flutter_rust_bridge_codegen --version 1.80.1 --features "uuid" --locked
@@ -165,13 +159,6 @@ jobs:
             Copy-Item "${{ github.workspace }}/self/assets/logo.png" -Destination "res/logo.png"
           }
 
-      - name: DEBUG - Verify branding files
-        working-directory: rustdesk
-        shell: bash
-        run: |
-          echo "--- Checking for processed branding files in 'rustdesk/res' directory ---"
-          ls -R res
-
       - name: Set Custom Server Configuration
         working-directory: rustdesk
         shell: powershell
@@ -187,7 +174,7 @@ jobs:
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
 
-      - name: Build RustDesk and Download Resources
+      - name: Build RustDesk
         working-directory: rustdesk
         shell: powershell
         run: |
@@ -197,12 +184,10 @@ jobs:
         working-directory: rustdesk
         shell: bash
         run: |
-          # Prepare directory
           mkdir -p ./rustdesk_build_output
           cp -r flutter/build/windows/x64/runner/Release/* ./rustdesk_build_output/
           cp ./WindowInjection.dll ./rustdesk_build_output/
 
-          # Generate custom options string
           options=""
           if [ ! -z "${{ env.PERMANENT_PASSWORD }}" ]; then
             options="password=${{ env.PERMANENT_PASSWORD }},"
@@ -219,7 +204,6 @@ jobs:
             options="${options}hide-cm=Y,"
           fi
 
-          # Create custom.txt in the final build directory
           echo -n "$options" > ./rustdesk_build_output/custom.txt
           
           echo "--- Content of custom.txt ---"
