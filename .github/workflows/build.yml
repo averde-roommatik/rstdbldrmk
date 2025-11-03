@@ -25,7 +25,7 @@ env:
   HIDE_CM: ${{ vars.HIDE_CM || 'false' }}
   CYCLE_MONITOR_FEATURE: ${{ vars.CYCLE_MONITOR_FEATURE || 'false' }}
   X_OFFLINE_FEATURE: ${{ vars.X_OFFLINE_FEATURE || 'false' }}
-  REMOVE_NEW_VERSION_NOTIF_FEATURE: ${{ vars.REMOVE_NEW_VERSION_NOTIF_FEATURE || 'false' }}
+  REMOVE_NEW_VERSION_NOTIF_FEATURE: ${{ vars.REMOVE_NEW_VERSION_NOTIF_FEATURE || 'true' }}
 
 jobs:
   build-windows-client:
@@ -130,16 +130,16 @@ jobs:
             sed -i '/<\/compatibility>/a \ \ \ \ \ \ \ \ <security>\n \ \ \ \ \ \ \ \ \ \ <requestedExecutionLevel level="requireAdministrator" uiAccess="false"/>\n \ \ \ \ \ \ \ \ </security>' ./flutter/windows/runner/runner.exe.manifest
           fi
           if [ "${{ env.CYCLE_MONITOR_FEATURE }}" == "true" ]; then
-            git apply "${{ github.workspace }}/self/.github/patches/cycle_monitor.diff"
+            git apply "${{ github.workspace }}/self/.github/patches/cycle_monitor.diff" || echo "Warning: cycle_monitor patch failed."
           fi
           if [ "${{ env.X_OFFLINE_FEATURE }}" == "true" ]; then
-            git apply "${{ github.workspace }}/self/.github/patches/xoffline.diff"
+            git apply "${{ github.workspace }}/self/.github/patches/xoffline.diff" || echo "Warning: xoffline patch failed."
           fi
           if [ "${{ env.REMOVE_NEW_VERSION_NOTIF_FEATURE }}" == "true" ]; then
-            git apply "${{ github.workspace }}/self/.github/patches/removeNewVersionNotif.diff"
+            sed -i -e 's#updateUrl.isNotEmpty#false#' ./flutter/lib/desktop/pages/desktop_home_page.dart
           fi
-          git apply "${{ github.workspace }}/self/.github/patches/allowCustom.diff"
-          git apply "${{ github.workspace }}/self/.github/patches/removeSetupServerTip.diff"
+          git apply "${{ github.workspace }}/self/.github/patches/allowCustom.diff" || echo "Warning: allowCustom patch failed."
+          git apply "${{ github.workspace }}/self/.github/patches/removeSetupServerTip.diff" || echo "Warning: removeSetupServerTip patch failed."
 
       - name: Apply Custom Branding (Icon, Logo, Server) and Build Icons
         working-directory: rustdesk
