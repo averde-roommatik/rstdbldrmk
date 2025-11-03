@@ -5,7 +5,7 @@ on:
 
 env:
   RUSTDESK_VERSION: ${{ vars.RUSTDESK_VERSION || '1.4.3' }}
-  FLUTTER_VERSION: "3.24.5"
+  FLUTTER_VERSION: "3.24.4"
   RUST_VERSION: "1.75"
   VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
   VCPKG_DEFAULT_HOST_TRIPLET: "x64-windows-static"
@@ -20,7 +20,9 @@ env:
   PERMANENT_PASSWORD: ${{ secrets.PERMANENT_PASSWORD }}
   DELAY_FIX: ${{ vars.DELAY_FIX || 'true' }}
   RUN_AS_ADMIN: ${{ vars.RUN_AS_ADMIN || 'false' }}
-  CUSTOM_TXT_CONTENT: ${{ vars.CUSTOM_TXT_CONTENT || '{}' }}
+  DENY_LAN: ${{ vars.DENY_LAN || 'false' }}
+  DIRECTION: ${{ vars.DIRECTION || 'both' }}
+  HIDE_CM: ${{ vars.HIDE_CM || 'false' }}
   CYCLE_MONITOR_FEATURE: ${{ vars.CYCLE_MONITOR_FEATURE || 'false' }}
   X_OFFLINE_FEATURE: ${{ vars.X_OFFLINE_FEATURE || 'false' }}
   REMOVE_NEW_VERSION_NOTIF_FEATURE: ${{ vars.REMOVE_NEW_VERSION_NOTIF_FEATURE || 'false' }}
@@ -106,23 +108,23 @@ jobs:
             git apply "$PATCH_FILE" || echo "Warning: Flutter patch could not be applied. Continuing build."
             cd "${{ github.workspace }}/rustdesk"
           fi
-          sed -i -e 's|2ded7f146437a761ffe6981e2f742038f85ca68d|08a471bb8ceccdd50483c81cdfa8b81b07b14b87|' ./flutter/pubspec.lock
-          sed -i -e 's|2ded7f146437a761ffe6981e2f742038f85ca68d|08a471bb8ceccdd50483c81cdfa8b81b07b14b87|' ./flutter/pubspec.yaml
-          sed -i -e "s|description = \"RustDesk Remote Desktop\"|description = \"${{ env.APP_NAME }}\"|g" ./Cargo.toml ./libs/portable/Cargo.toml
-          sed -i -e "s|ProductName = \"RustDesk\"|ProductName = \"${{ env.APP_NAME }}\"|g" ./Cargo.toml ./libs/portable/Cargo.toml
-          sed -i -e "s|FileDescription = \"RustDesk Remote Desktop\"|FileDescription = \"${{ env.APP_NAME }}\"|g" ./Cargo.toml ./libs/portable/Cargo.toml
-          sed -i -e "s|\"RustDesk Remote Desktop\"|\"${{ env.APP_NAME }}\"|g" ./flutter/windows/runner/Runner.rc
-          sed -i -e "s|\"RustDesk\"|\"${{ env.APP_NAME }}\"|g" ./flutter/windows/runner/Runner.rc
-          find ./src/lang -name "*.rs" -exec sed -i -e "s|RustDesk|${{ env.APP_NAME }}|g" {} \;
-          sed -i -e "s|Purslane Ltd|${{ env.COMPANY_NAME }}|g" ./flutter/lib/desktop/pages/desktop_setting_page.dart ./res/msi/preprocess.py ./Cargo.toml ./libs/portable/Cargo.toml
-          sed -i -e "s|PURSLANE|${{ env.COMPANY_NAME }}|g" ./res/msi/preprocess.py
-          sed -i -e "s|Purslane Ltd|${{ env.COMPANY_NAME }}|g" ./flutter/windows/runner/Runner.rc
-          sed -i -e "s|Homepage: https://rustdesk.com|Homepage: ${{ env.CUSTOM_URL }}|g" ./build.py
-          sed -i -e "s|https://rustdesk.com/privacy.html|${{ env.CUSTOM_URL }}/privacy.html|g" ./flutter/lib/desktop/pages/install_page.dart
-          find ./flutter -name "*.dart" -exec sed -i -e "s|https://rustdesk.com|${{ env.CUSTOM_URL }}|g" {} \;
-          sed -i -e "s|https://rustdesk.com/download|${{ env.DOWNLOAD_URL }}|g" ./flutter/lib/desktop/pages/desktop_home_page.dart ./flutter/lib/mobile/pages/connection_page.dart ./src/ui/index.tis
+          sed -i -e 's#2ded7f146437a761ffe6981e2f742038f85ca68d#08a471bb8ceccdd50483c81cdfa8b81b07b14b87#' ./flutter/pubspec.lock
+          sed -i -e 's#2ded7f146437a761ffe6981e2f742038f85ca68d#08a471bb8ceccdd50483c81cdfa8b81b07b14b87#' ./flutter/pubspec.yaml
+          sed -i -e "s#description = \"RustDesk Remote Desktop\"#description = \"${{ env.APP_NAME }}\"#g" ./Cargo.toml ./libs/portable/Cargo.toml
+          sed -i -e "s#ProductName = \"RustDesk\"#ProductName = \"${{ env.APP_NAME }}\"#g" ./Cargo.toml ./libs/portable/Cargo.toml
+          sed -i -e "s#FileDescription = \"RustDesk Remote Desktop\"#FileDescription = \"${{ env.APP_NAME }}\"#g" ./Cargo.toml ./libs/portable/Cargo.toml
+          sed -i -e "s#\"RustDesk Remote Desktop\"#\"${{ env.APP_NAME }}\"#g" ./flutter/windows/runner/Runner.rc
+          sed -i -e "s#\"RustDesk\"#\"${{ env.APP_NAME }}\"#g" ./flutter/windows/runner/Runner.rc
+          find ./src/lang -name "*.rs" -exec sed -i -e "s#RustDesk#${{ env.APP_NAME }}#g" {} \;
+          sed -i -e "s#Purslane Ltd#${{ env.COMPANY_NAME }}#g" ./flutter/lib/desktop/pages/desktop_setting_page.dart ./res/msi/preprocess.py ./Cargo.toml ./libs/portable/Cargo.toml
+          sed -i -e "s#PURSLANE#${{ env.COMPANY_NAME }}#g" ./res/msi/preprocess.py
+          sed -i -e "s#Purslane Ltd#${{ env.COMPANY_NAME }}#g" ./flutter/windows/runner/Runner.rc
+          sed -i -e "s#Homepage: https://rustdesk.com#Homepage: ${{ env.CUSTOM_URL }}#g" ./build.py
+          sed -i -e "s#https://rustdesk.com/privacy.html#${{ env.CUSTOM_URL }}/privacy.html#g" ./flutter/lib/desktop/pages/install_page.dart
+          find ./flutter -name "*.dart" -exec sed -i -e "s#https://rustdesk.com#${{ env.CUSTOM_URL }}#g" {} \;
+          sed -i -e "s#https://rustdesk.com/download#${{ env.DOWNLOAD_URL }}#g" ./flutter/lib/desktop/pages/desktop_home_page.dart ./flutter/lib/mobile/pages/connection_page.dart ./src/ui/index.tis
           if [ "${{ env.DELAY_FIX }}" == "true" ]; then
-            sed -i -e 's|!key.is_empty()|false|' ./src/client.rs
+            sed -i -e 's#!key.is_empty()#false#' ./src/client.rs
           fi
           if [ "${{ env.RUN_AS_ADMIN }}" == "true" ]; then
             sed -i '/<\/compatibility>/a \ \ \ \ \ \ \ \ <security>\n \ \ \ \ \ \ \ \ \ \ <requestedExecutionLevel level="requireAdministrator" uiAccess="false"/>\n \ \ \ \ \ \ \ \ </security>' ./flutter/windows/runner/runner.exe.manifest
@@ -158,6 +160,24 @@ jobs:
           (Get-Content libs/hbb_common/src/config.rs).Replace('rs-ny.rustdesk.com', '${{ env.SERVER_IP }}') | Set-Content libs/hbb_common/src/config.rs
           (Get-Content libs/hbb_common/src/config.rs).Replace('OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=', '${{ env.PUBLIC_KEY }}') | Set-Content libs/hbb_common/src/config.rs
           (Get-Content src/common.rs).Replace('https://admin.rustdesk.com', '${{ env.API_SERVER }}') | Set-Content src/common.rs
+      
+      - name: Generate Custom Options
+        id: custom_options
+        shell: bash
+        run: |
+          options=""
+          if [ "${{ env.DENY_LAN }}" == "true" ]; then
+            options="${options}enable-lan-discovery=N,"
+          fi
+          if [ "${{ env.DIRECTION }}" == "incoming" ]; then
+            options="${options}in-only=Y,"
+          elif [ "${{ env.DIRECTION }}" == "outgoing" ]; then
+            options="${options}out-only=Y,"
+          fi
+          if [ "${{ env.HIDE_CM }}" == "true" ]; then
+            options="${options}hide-cm=Y,"
+          fi
+          echo "options_string=${options}" >> $GITHUB_ENV
 
       - name: Install Python dependencies for packaging
         working-directory: rustdesk/libs/portable
@@ -184,9 +204,9 @@ jobs:
             Invoke-WebRequest -Uri https://github.com/rustdesk/hbb_common/releases/download/driver/rustdesk_printer_driver_v4-1.4.zip -OutFile printer.zip
             Expand-Archive printer.zip -DestinationPath ".\rustdesk_build_output\drivers\RustDeskPrinterDriver" -Force
           } catch {
-              Write-Host "Advertencia: Falló la descarga del driver de impresora. Continuando sin él."
+              Write-Host "Warning: Failed to download the printer driver. Continuing without it."
           }
-          Set-Content -Path ".\rustdesk_build_output\custom.txt" -Value '${{ env.CUSTOM_TXT_CONTENT }}'
+          Set-Content -Path ".\rustdesk_build_output\custom.txt" -Value '${{ env.options_string }}'
       
       - name: Package Final Executables (EXE and MSI)
         working-directory: rustdesk
